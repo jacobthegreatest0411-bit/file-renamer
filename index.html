@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Batch File Renamer</title>
+    <title>Batch File Renamer (Musical Note Order)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
@@ -23,7 +23,6 @@
         .form-group {
             margin-bottom: 20px;
         }
-        /* Drag and Drop Zone Styles */
         #dropZone {
             border: 2px dashed #0969da;
             border-radius: 6px;
@@ -42,7 +41,7 @@
             color: #57606a;
         }
         #fileInput {
-            display: none; /* Hide the default ugly file input */
+            display: none;
         }
         #fileCounter {
             font-size: 14px;
@@ -72,17 +71,18 @@
             margin-top: 15px;
             font-weight: bold;
             text-align: center;
+            white-space: pre-line;
         }
     </style>
 </head>
 <body>
 
-    <h2>Batch File Renamer</h2>
-    <p>Drag & drop multiple files or click the box to upload. They will be renamed to 1, 2, 3... inside a ZIP archive.</p>
+    <h2>Musical Batch File Renamer</h2>
+    <p>Drag & drop audio samples labeled by pitch (e.g., <code>C5</code>, <code>F#3</code>, <code>Bb4</code>). The tool will sort them from lowest to highest pitch and rename them to 1, 2, 3...</p>
 
     <div class="form-group">
         <div id="dropZone" onclick="document.getElementById('fileInput').click()">
-            <p><strong>Drag & drop files here</strong> or click to browse</p>
+            <p><strong>Drag & drop audio files here</strong> or click to browse</p>
             <div id="fileCounter">No files selected</div>
         </div>
         <input type="file" id="fileInput" multiple>
@@ -101,9 +101,7 @@
         
         let selectedFiles = [];
 
-        // --- Drag and Drop Event Listeners ---
-
-        // Prevent browser from opening the file when dropped
+        // --- Drag and Drop Events ---
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             document.body.addEventListener(eventName, preventDefaults, false);
         });
@@ -113,7 +111,6 @@
             e.stopPropagation();
         }
 
-        // Visual highlights when hovering files over the zone
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
         });
@@ -122,7 +119,6 @@
             dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
         });
 
-        // Handle dropped files
         dropZone.addEventListener('drop', (e) => {
             const dt = e.dataTransfer;
             if (dt.files.length > 0) {
@@ -131,7 +127,6 @@
             }
         });
 
-        // Handle standard file selection via click/dialog
         fileInput.addEventListener('change', (e) => {
             if (fileInput.files.length > 0) {
                 selectedFiles = Array.from(fileInput.files);
@@ -140,12 +135,43 @@
         });
 
         function updateFileCounter() {
-            status.innerText = ""; // Clear any old error messages
+            status.innerText = "";
             if (selectedFiles.length === 1) {
                 fileCounter.innerText = "1 file selected";
             } else {
                 fileCounter.innerText = `${selectedFiles.length} files selected`;
             }
+        }
+
+        // --- Musical Note Sorting Logic ---
+
+        // Map note names to their relative position in an octave (C is 0)
+        const noteMapping = {
+            'c': 0, 'c#': 1, 'db': 1, 'd': 2, 'd#': 3, 'eb': 3, 
+            'e': 4, 'f': 5, 'f#': 6, 'gb': 6, 'g': 7, 'g#': 8, 
+            'ab': 8, 'a': 9, 'a#': 10, 'bb': 10, 'b': 11
+        };
+
+        // Function to extract MIDI value from a filename
+        function getMidiValue(filename) {
+            // Regex to find a note letter (A-G), optional sharp/flat (#/b), and an octave number (-1 to 9)
+            // It matches patterns like C5, F#3, Bb4, or even lowercase c5
+            const regex = /([a-gA-G][#b]?)(-?\d+)/;
+            const match = filename.match(regex);
+
+            if (!match) {
+                return null; // Return null if no musical note is found in the name
+            }
+
+            const noteName = match[1].toLowerCase();
+            const octave = parseInt(match[2], 10);
+
+            if (noteMapping[noteName] !== undefined) {
+                // Standard MIDI formula: (Octave + 1) * 12 + NoteValue
+                return (octave + 1) * 12 + noteMapping[noteName];
+            }
+
+            return null;
         }
 
         // --- Core Renaming Logic ---
@@ -159,12 +185,22 @@
 
             button.disabled = true;
             status.style.color = '#24292f';
-            status.innerText = "Processing files... Please wait.";
+            status.innerText = "Analyzing pitches and packing ZIP...";
 
             const zip = new JSZip();
 
-            // Sort files naturally by original name so 1, 2, 3 matches their current order
-            selectedFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}));
+            // Sort files based on their calculated MIDI pitch value
+            selectedFiles.sort((a, b) => {
+                const midiA = getMidiValue(a.name);
+                const midiB = getMidiValue(b.name);
+
+                // If a file doesn't have a musical note name, push it to the end fallback alphabetically
+                if (midiA === null && midiB === null) return a.name.localeCompare(b.name);
+                if (midiA === null) return 1;
+                if (midiB === null) return -1;
+
+                return midiA - midiB;
+            });
 
             selectedFiles.forEach((file, index) => {
                 const extension = file.name.substring(file.name.lastIndexOf('.'));
@@ -177,14 +213,14 @@
                 
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(content);
-                link.download = "renamed_files.zip";
+                link.download = "musical_ordered_files.zip";
                 
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
 
                 status.style.color = '#2da44e';
-                status.innerText = `Success! ${selectedFiles.length} files bundled and downloaded.`;
+                status.innerText = `Success! ${selectedFiles.length} files sorted by note and downloaded.`;
             } catch (error) {
                 console.error(error);
                 status.style.color = '#cf222e';
